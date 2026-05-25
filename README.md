@@ -34,7 +34,7 @@ Create a Python environment with PyTorch and the common scientific stack:
 ```bash
 conda create -n dygma python=3.10
 conda activate dygma
-pip install numpy pandas scikit-learn scipy torch
+pip install -r requirements.txt
 ```
 
 Install the proper PyTorch build for your CUDA version from the official PyTorch instructions if GPU acceleration is required.
@@ -213,15 +213,4 @@ This project is released under the MIT License.
 
 ## Citation
 
-If you use this repository in your research, please cite the DyGMA paper:
-
-```bibtex
-@article{dygma,
-  title={DyGMA: Dynamic Graph Mamba for Multivariate Time-Series Anomaly Detection},
-  author={DyGMA Authors},
-  journal={},
-  year={2026}
-}
-```
-
-Update the BibTeX entry with the final publication information before release.
+The citation information will be updated after the paper is released.
