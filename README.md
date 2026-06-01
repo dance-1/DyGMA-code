@@ -18,9 +18,9 @@ The current implementation supports six benchmark datasets:
 +-- main.py                    # Training and test entry point
 +-- solver.py                  # DyGMA training, scoring, profiling, and RCA export
 +-- evaluate.py                # PA%0, Affiliation, ROC-AUC, and VUS-ROC evaluation
-+-- evaluate_hr_mrr_SWAT.py    # SWaT RCA evaluation
-+-- evaluate_hr_mrr_WADI.py    # WADI RCA evaluation
-+-- run_all_dygma_1epoch.sh    # One-epoch sanity run for all supported datasets
++-- evaluate_RCA_SWAT.py       # SWaT RCA evaluation
++-- evaluate_RCA_WADI.py       # WADI RCA evaluation
++-- run_all_dygma.sh           # 12-epoch all-dataset run
 +-- data_factory/              # Dataset loaders
 +-- model/                     # DyGMA model
 +-- utils/                     # Utility functions
@@ -73,15 +73,37 @@ dataset/
 
 For CSV datasets, the first column is treated as the timestamp column and the remaining columns are sensor values. Labels should be binary, where `1` denotes anomaly and `0` denotes normal.
 
+Expected file formats:
+
+```text
+# train.csv / test.csv
+timestamp,sensor_1,sensor_2,...,sensor_N
+2015-12-28 10:00:00,0.12,1.83,...,0.41
+
+# test_label.csv
+timestamp,label
+2015-12-28 10:00:00,0
+```
+
+For NumPy datasets, arrays should be saved as:
+
+```text
+*_train.npy       shape = [num_train_timestamps, num_sensors]
+*_test.npy        shape = [num_test_timestamps, num_sensors]
+*_test_label.npy  shape = [num_test_timestamps]
+```
+
+The number of sensor columns must match `--input_c` and `--output_c`.
+
 Large datasets use a larger validation stride to keep validation practical. WADI and HAI also include normalization safeguards for near-constant sensors.
 
 ## Train
 
-Example: train DyGMA on MSL for one epoch.
+Example: train DyGMA on MSL for 12 epochs.
 
 ```bash
 python main.py \
-  --num_epochs 1 \
+  --num_epochs 12 \
   --win_size 100 \
   --patch_len 1 \
   --batch_size 32 \
@@ -100,7 +122,7 @@ Run test mode after training:
 
 ```bash
 python main.py \
-  --num_epochs 1 \
+  --num_epochs 12 \
   --win_size 100 \
   --patch_len 1 \
   --batch_size 32 \
@@ -136,23 +158,23 @@ The report includes:
 
 ## Run All Datasets
 
-Use the provided script for a one-epoch sanity run over all six datasets:
+Use the provided script for a 12-epoch run over all six datasets:
 
 ```bash
-bash run_all_dygma_1epoch.sh
+bash run_all_dygma.sh
 ```
 
 You can override common settings:
 
 ```bash
-EPOCHS=3 BATCH_SIZE=64 bash run_all_dygma_1epoch.sh
+EPOCHS=3 BATCH_SIZE=64 bash run_all_dygma.sh
 ```
 
 Edit `DATASETS` inside the script if you only want to run a subset.
 
 ## RCA Export
 
-To export per-timestamp sensor rankings for root-cause analysis, enable RCA export in `run_all_dygma_1epoch.sh`:
+To export per-timestamp sensor rankings for root-cause analysis, enable RCA export in `run_all_dygma.sh`:
 
 ```bash
 EXPORT_RCA=1
@@ -162,7 +184,7 @@ Or pass `--export_rca` in test mode:
 
 ```bash
 python main.py \
-  --num_epochs 1 \
+  --num_epochs 12 \
   --win_size 100 \
   --patch_len 1 \
   --batch_size 32 \
@@ -174,22 +196,22 @@ python main.py \
   --export_rca
 ```
 
-RCA export adds `Timestamp` and `TopK_Sensor` columns to the score CSV. Sensor ranking uses per-sensor reconstruction scores normalized by Z-score statistics estimated from the training set.
+RCA export adds `Timestamp` and `TopK_Sensor` columns to the score CSV. Sensor ranking uses per-sensor reconstruction scores.
 
 ## RCA Evaluation
 
 SWaT:
 
 ```bash
-python evaluate_hr_mrr_SWAT.py \
-  --scores_file checkpoints/SWaT_win100_in51_out51_batch32_patch1_ep1_scores.csv
+python evaluate_RCA_SWAT.py \
+  --scores_file checkpoints/SWaT_win100_in51_out51_batch32_patch1_ep12_scores.csv
 ```
 
 WADI:
 
 ```bash
-python evaluate_hr_mrr_WADI.py \
-  --scores_file checkpoints/WADI_win100_in123_out123_batch32_patch1_ep1_scores.csv
+python evaluate_RCA_WADI.py \
+  --scores_file checkpoints/WADI_win100_in123_out123_batch32_patch1_ep12_scores.csv
 ```
 
 Each script writes a text report under `checkpoints/` with:

@@ -107,31 +107,6 @@ class Solver(object):
             return energy, cri_var
         return energy
 
-    def sensor_score_stats(self, criterion):
-        # Training-set statistics normalize per-sensor RCA scores.
-        score_sum = np.zeros(self.input_c, dtype=np.float64)
-        score_sq_sum = np.zeros(self.input_c, dtype=np.float64)
-        total_count = 0
-
-        self.model.eval()
-        with torch.no_grad():
-            for input_data, _ in self.train_loader:
-                _, sensor_scores = self.anomaly_energy(
-                    input_data, criterion, return_sensor_scores=True
-                )
-                sensor_scores = sensor_scores.detach().cpu().numpy()
-                score_sum += np.sum(sensor_scores, axis=(0, 1))
-                score_sq_sum += np.sum(sensor_scores ** 2, axis=(0, 1))
-                total_count += sensor_scores.shape[0] * sensor_scores.shape[1]
-
-        means = score_sum / total_count
-        variances = score_sq_sum / total_count - means ** 2
-        stds = np.sqrt(np.maximum(variances, 0.0))
-        return (
-            torch.tensor(means, device=self.device, dtype=torch.float32),
-            torch.tensor(stds, device=self.device, dtype=torch.float32),
-        )
-
     def feature_names(self):
         return getattr(
             self.score_loader.dataset,
@@ -335,8 +310,7 @@ class Solver(object):
         feature_names = self.feature_names()
 
         if export_rca:
-            print("[RCA] Exporting Z-score based sensor rankings...")
-            sensor_means, sensor_stds = self.sensor_score_stats(criterion)
+            print("[RCA] Exporting raw per-sensor score rankings...")
 
         with torch.no_grad():
             attens_energy = []
@@ -348,9 +322,7 @@ class Solver(object):
                     cri, sensor_scores = self.anomaly_energy(
                         input_data, criterion, return_sensor_scores=True
                     )
-                    # Z-score makes sensor rankings comparable across different scales.
-                    z_scores = (sensor_scores - sensor_means) / (sensor_stds + 1e-5)
-                    _, top_indices = torch.topk(z_scores, k=self.input_c, dim=-1)
+                    _, top_indices = torch.topk(sensor_scores, k=self.input_c, dim=-1)
                     sensor_rankings.append(top_indices.reshape(-1, self.input_c).detach().cpu().numpy())
                 else:
                     cri = self.anomaly_energy(input_data, criterion)

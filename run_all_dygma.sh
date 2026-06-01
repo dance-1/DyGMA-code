@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run one training epoch and one score-export test pass for all six datasets.
+# Run a 12-epoch train/test pass for all six datasets.
 # Usage:
-#   bash run_all_dygma_1epoch.sh
+#   bash run_all_dygma.sh
 
 
 cd "$(dirname "$0")"
 
-EPOCHS=${EPOCHS:-1}
+EPOCHS=${EPOCHS:-12}
 WIN_SIZE=${WIN_SIZE:-100}
 PATCH_LEN=${PATCH_LEN:-1}
 BATCH_SIZE=${BATCH_SIZE:-32}
