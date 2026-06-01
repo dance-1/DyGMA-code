@@ -29,6 +29,8 @@ The current implementation supports six benchmark datasets:
 
 ## Environment
 
+We recommend running DyGMA on Linux or WSL2 with CUDA-enabled PyTorch. The provided scripts are Bash scripts and are tested under a Linux/WSL environment.
+
 Create a Python environment with PyTorch and the common scientific stack:
 
 ```bash
