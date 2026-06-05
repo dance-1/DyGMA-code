@@ -198,7 +198,7 @@ python main.py \
   --export_rca
 ```
 
-RCA export adds `Timestamp` and `TopK_Sensor` columns to the score CSV. Sensor ranking uses per-sensor reconstruction scores.
+RCA export adds `Timestamp` and `TopK_Sensor` columns to the score CSV. Sensor ranking uses the full sensor-level DyGMA score, combining reconstruction error with weighted graph-discrepancy evidence.
 
 ## RCA Evaluation
 
