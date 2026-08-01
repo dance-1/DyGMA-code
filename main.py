@@ -23,8 +23,9 @@ def fix_random_seed(seed=3407):
 def main(config):
     cudnn.benchmark = True
 
-    if not os.path.exists(config.model_save_path):
-        mkdir(config.model_save_path)
+    if config.mode == 'train':
+        mkdir(config.checkpoint_dir)
+    mkdir(config.output_dir)
 
     solver = Solver(vars(config))
     if config.mode == 'train':
@@ -54,12 +55,21 @@ def build_parser():
     parser.add_argument('--input_c', type=int, default=38)
     parser.add_argument('--output_c', type=int, default=38)
     parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--pretrained_model', type=str, default=None)
     parser.add_argument('--dataset', type=str, default='MSL')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
     parser.add_argument('--data_path', type=str, default='dataset/MSL')
-    parser.add_argument('--model_save_path', type=str, default='checkpoints')
-    parser.add_argument('--export_rca', action='store_true', help='Export TopK sensor rankings for RCA.')
+    parser.add_argument(
+        '--checkpoint_dir',
+        type=str,
+        default=os.path.join('checkpoints', 'pretrained'),
+        help='Directory containing pretrained checkpoints or receiving trained checkpoints.',
+    )
+    parser.add_argument(
+        '--output_dir',
+        type=str,
+        default='outputs',
+        help='Directory for NPY score artifacts and text reports.',
+    )
 
     return parser
 

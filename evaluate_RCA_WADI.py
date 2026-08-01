@@ -5,8 +5,9 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+from artifact_io import load_score_artifact
 
-# python evaluate_RCA_WADI.py --scores_file checkpoints/WADI_win100_in123_out123_batch32_patch1_ep12_scores.csv
+# python evaluate_RCA_WADI.py --scores_file outputs/WADI_win100_in123_out123_batch32_patch1_ep15_scores.npy
 
 WADI_ATTACKS = [
     ("2017/10/9 19:25:00", "2017/10/9 19:50:16", "1_MV_001", "", "", "", "", ""),
@@ -75,40 +76,33 @@ def expand_targets(base_targets):
     return expanded
 
 
-def top_sensor_columns(frame):
-    columns = [col for col in frame.columns if col.startswith("Top") and col.endswith("_Sensor")]
-    return sorted(columns, key=lambda col: int(col[3:].split("_", 1)[0]))
-
-
-def aggregate_event_ranking(event_frame, top_cols):
+def aggregate_event_ranking(ranking_rows, feature_names):
     votes = defaultdict(float)
-    for _, row in event_frame.iterrows():
-        for rank, col in enumerate(top_cols, start=1):
-            sensor = str(row[col]).strip().lower() if pd.notna(row[col]) else ""
-            if sensor and sensor != "nan":
-                votes[sensor] += 1.0 / rank
+    for row in ranking_rows:
+        for rank, feature_index in enumerate(row, start=1):
+            sensor = str(feature_names[int(feature_index)]).strip().lower()
+            votes[sensor] += 1.0 / rank
     return [sensor for sensor, _ in sorted(votes.items(), key=lambda item: item[1], reverse=True)]
 
 
-def load_rca_frame(rca_source):
-    frame = pd.read_csv(rca_source, low_memory=False)
-    top_cols = top_sensor_columns(frame)
-    if not top_cols:
-        raise ValueError(
-            "No TopK sensor columns found. Run test with --export_rca first, "
-            "or pass an RCA table with Top*_Sensor columns."
-        )
-    if "Timestamp" not in frame.columns:
-        raise ValueError("RCA evaluation requires a Timestamp column.")
-    return frame, top_cols
+def load_rca_artifact(rca_source):
+    artifact = load_score_artifact(
+        rca_source, expected_dataset="WADI", require_ranking_mode="z"
+    )
+    timestamps = pd.Series(np.asarray(artifact["timestamp"]).astype(str)).str.strip()
+    time_objects = pd.to_datetime(timestamps, errors="coerce")
+    if time_objects.isna().all():
+        raise ValueError("WADI RCA artifact does not contain parseable timestamps.")
+    return (
+        time_objects,
+        np.asarray(artifact["sensor_rankings"], dtype=np.int64),
+        np.asarray(artifact["feature_names"]).astype(str),
+    )
 
 
 def evaluate(rca_source, output_dir, focus_window, write_report=True):
-    scores_df, top_cols = load_rca_frame(rca_source)
+    time_objects, sensor_rankings, feature_names = load_rca_artifact(rca_source)
     attacks_df = embedded_attacks()
-
-    scores_df["Timestamp"] = scores_df["Timestamp"].astype(str).str.strip()
-    scores_df["Time_Obj"] = pd.to_datetime(scores_df["Timestamp"], errors="coerce")
 
     mrr_values = []
     hr100_values = []
@@ -124,15 +118,16 @@ def evaluate(rca_source, output_dir, focus_window, write_report=True):
             continue
 
         targets = expand_targets(base_targets)
-        mask = (scores_df["Time_Obj"] >= attack["Start_Obj"]) & (
-            scores_df["Time_Obj"] <= attack["End_Obj"]
+        mask = (time_objects >= attack["Start_Obj"]) & (
+            time_objects <= attack["End_Obj"]
         )
-        event_frame = scores_df[mask]
-        if event_frame.empty:
+        event_rankings = sensor_rankings[mask.to_numpy()]
+        if event_rankings.shape[0] == 0:
             continue
 
-        event_frame = event_frame.head(focus_window)
-        predictions = aggregate_event_ranking(event_frame, top_cols)
+        predictions = aggregate_event_ranking(
+            event_rankings[:focus_window], feature_names
+        )
 
         reciprocal_rank = 0.0
         for rank, sensor in enumerate(predictions, start=1):
@@ -177,24 +172,6 @@ def evaluate(rca_source, output_dir, focus_window, write_report=True):
             handle.write(report)
         print(f"Saved RCA report: {report_path}")
     return metrics
-
-
-def resolve_rca_source(scores_file, rca_file):
-    if rca_file:
-        if rca_file.endswith("_RCA.csv") and not rca_file.endswith("_RCA_noZ.csv"):
-            raise ValueError("Old Z-normalized *_RCA.csv files are not accepted.")
-        return rca_file
-
-    if scores_file.endswith("_scores.csv"):
-        candidate = scores_file.replace("_scores.csv", "_RCA_noZ.csv")
-        if os.path.exists(candidate):
-            return candidate
-        return scores_file
-
-    if scores_file.endswith("_RCA_noZ.csv"):
-        return scores_file
-
-    raise ValueError("Pass --scores_file or --rca_file pointing to a CSV with Top*_Sensor columns.")
 
 
 def my_kl_loss_var(p, q):
@@ -495,7 +472,7 @@ def write_combined_analysis(dataset, output_dir, event_metrics=None, pilot_summa
     report_lines.extend([
         "",
         "3. Table B. Sensor-level root-cause candidate ranking",
-        "MRR / HR@100% / HR@150% are computed from exported Top*_Sensor rankings.",
+        "MRR / HR@100% / HR@150% are computed from Z-ranked sensor indices in the NPY artifact.",
         "------------------------------------------------------------",
     ])
 
@@ -533,12 +510,8 @@ def main():
     )
     parser.add_argument(
         "--scores_file",
-        default=os.path.join("checkpoints", "WADI_win100_in123_out123_batch32_patch1_ep10_scores.csv"),
-    )
-    parser.add_argument(
-        "--rca_file",
-        default=None,
-        help="Optional RCA CSV used for MRR/HR ranking. If omitted, --scores_file is used.",
+        default=os.path.join("outputs", "WADI_win100_in123_out123_batch32_patch1_ep15_scores.npy"),
+        help="Unified WADI NPY artifact; ranking_mode must be z.",
     )
     parser.add_argument("--output_dir", default="checkpoints")
     parser.add_argument("--focus_window", type=int, default=180)
@@ -564,9 +537,8 @@ def main():
     pilot_summary = None
 
     if args.analysis in {"event_rca", "both"}:
-        rca_file = resolve_rca_source(args.scores_file, args.rca_file)
         event_metrics = evaluate(
-            rca_file,
+            args.scores_file,
             args.output_dir,
             args.focus_window,
             write_report=(args.analysis == "event_rca"),

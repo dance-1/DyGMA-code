@@ -3,7 +3,7 @@ import glob
 import os
 
 import numpy as np
-import pandas as pd
+from artifact_io import load_score_artifact
 from sklearn.metrics import (
     precision_recall_fscore_support,
     precision_score,
@@ -179,13 +179,13 @@ def write_evaluation_section(report_path, run_name, metrics):
 
 
 def evaluate_file(score_file, base_dir, win_size):
-    run_name = os.path.basename(score_file).replace("_scores.csv", "")
+    run_name = os.path.basename(score_file).replace("_scores.npy", "")
     report_path = os.path.join(base_dir, f"Report_{run_name}.txt")
 
     print(f"[Evaluate] Loading scores: {score_file}", flush=True)
-    frame = pd.read_csv(score_file)
-    scores = frame["Anomaly_Score"].to_numpy()
-    labels = frame["Ground_Truth"].to_numpy().astype(int)
+    artifact = load_score_artifact(score_file)
+    scores = np.asarray(artifact["anomaly_score"], dtype=np.float64)
+    labels = np.asarray(artifact["ground_truth"], dtype=int)
 
     print("[Evaluate] Searching PA%0 and affiliation thresholds...", flush=True)
     pa, affiliation = search_threshold_metrics(scores, labels)
@@ -222,7 +222,7 @@ def main():
         score_files = [args.score_file]
     else:
         score_files = sorted(
-            glob.glob(os.path.join(args.base_dir, "**", "*_scores.csv"), recursive=True)
+            glob.glob(os.path.join(args.base_dir, "**", "*_scores.npy"), recursive=True)
         )
 
     print("=" * 60)

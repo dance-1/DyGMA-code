@@ -3,6 +3,7 @@ pandas
 scikit-learn
 scipy
 torch
+mamba-ssm
 matplotlib
 tqdm
 statsmodels

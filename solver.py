@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import pandas as pd
 import os
 import time
+from artifact_io import save_score_artifact
 from model.DyGMA import DyGMAModel
 from data_factory.data_loader import get_loader_segment
 
@@ -120,6 +120,29 @@ class Solver(object):
             return None
         return timestamps[:length]
 
+    def rca_train_score_statistics(self, criterion):
+        """Estimate train-distribution statistics for per-sensor Z ranking."""
+        score_sum = torch.zeros(self.input_c, device=self.device)
+        score_sq_sum = torch.zeros(self.input_c, device=self.device)
+        score_count = 0
+
+        self.model.eval()
+        with torch.no_grad():
+            for input_data, _ in self.train_loader:
+                _, sensor_scores = self.anomaly_energy(
+                    input_data, criterion, return_sensor_scores=True
+                )
+                score_sum += sensor_scores.sum(dim=(0, 1))
+                score_sq_sum += (sensor_scores ** 2).sum(dim=(0, 1))
+                score_count += sensor_scores.shape[0] * sensor_scores.shape[1]
+
+        if score_count == 0:
+            raise ValueError("Cannot compute RCA Z statistics from an empty train loader.")
+
+        score_mean = score_sum / score_count
+        score_var = torch.clamp(score_sq_sum / score_count - score_mean ** 2, min=0.0)
+        return score_mean, torch.sqrt(score_var)
+
     def measure_efficiency(self):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -204,14 +227,14 @@ class Solver(object):
         print("======================TRAIN MODE======================")
 
         time_now = time.time()
-        path = self.model_save_path
+        path = self.checkpoint_dir
         if not os.path.exists(path):
             os.makedirs(path)
 
         train_steps = len(self.train_loader)
 
         prefix = self.run_name()
-        log_file = os.path.join(self.model_save_path, f"train_log_{prefix}.txt")
+        log_file = os.path.join(self.output_dir, f"train_log_{prefix}.txt")
 
         with open(log_file, "w", encoding="utf-8") as f:
             f.write("="*50 + "\n")
@@ -296,7 +319,19 @@ class Solver(object):
         if load_model:
 
             model_name = f"{self.run_name()}_checkpoint.pth"
-            self.model.load_state_dict(torch.load(os.path.join(str(self.model_save_path), model_name)), strict=False)
+            checkpoint_path = os.path.join(str(self.checkpoint_dir), model_name)
+            state_dict = torch.load(checkpoint_path, map_location=self.device)
+            state_dict = {
+                key: value
+                for key, value in state_dict.items()
+                if not key.endswith("total_ops") and not key.endswith("total_params")
+            }
+            missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+            if missing or unexpected:
+                raise RuntimeError(
+                    f"Checkpoint/model mismatch for {checkpoint_path}: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
 
         self.model.eval()
 
@@ -305,12 +340,15 @@ class Solver(object):
         print("======================TEST MODE======================")
 
         criterion = nn.MSELoss(reduction='none')
-        # Optional RCA export appends timestamp and TopK sensor rankings to scores.csv.
-        export_rca = bool(getattr(self, "export_rca", False))
+        ranking_mode = "z" if self.dataset in {"SWaT", "WADI"} else "raw"
         feature_names = self.feature_names()
 
-        if export_rca:
-            print("[RCA] Exporting raw per-sensor score rankings...")
+        z_score_mean = None
+        z_score_std = None
+        if ranking_mode == "z":
+            print("[RCA] Computing train-distribution Z statistics...")
+            z_score_mean, z_score_std = self.rca_train_score_statistics(criterion)
+        print(f"[RCA] Exporting {ranking_mode.upper()} per-sensor rankings...")
 
         with torch.no_grad():
             attens_energy = []
@@ -318,14 +356,18 @@ class Solver(object):
             sensor_rankings = []
 
             for i, (input_data, labels) in enumerate(self.score_loader):
-                if export_rca:
-                    cri, sensor_scores = self.anomaly_energy(
-                        input_data, criterion, return_sensor_scores=True
-                    )
-                    _, top_indices = torch.topk(sensor_scores, k=self.input_c, dim=-1)
-                    sensor_rankings.append(top_indices.reshape(-1, self.input_c).detach().cpu().numpy())
-                else:
-                    cri = self.anomaly_energy(input_data, criterion)
+                cri, sensor_scores = self.anomaly_energy(
+                    input_data, criterion, return_sensor_scores=True
+                )
+                ranking_scores = sensor_scores
+                if ranking_mode == "z":
+                    ranking_scores = (sensor_scores - z_score_mean) / (z_score_std + 1e-5)
+                _, top_indices = torch.topk(
+                    ranking_scores, k=self.input_c, dim=-1
+                )
+                sensor_rankings.append(
+                    top_indices.reshape(-1, self.input_c).detach().cpu().numpy()
+                )
                 attens_energy.append(cri.detach().cpu().numpy())
                 test_labels.append(labels.cpu().numpy())
 
@@ -336,32 +378,42 @@ class Solver(object):
 
         test_energy = np.convolve(test_energy, np.ones(smoothing_window)/smoothing_window, mode='same')
 
-        score_df = pd.DataFrame({
-            'Time': range(len(test_energy)),
-            'Anomaly_Score': test_energy,
-            'Ground_Truth': gt
-        })
-        if export_rca:
-            timestamps = self.score_timestamps(len(score_df))
-            if timestamps is not None:
-                score_df.insert(1, "Timestamp", timestamps)
-
-            all_rankings = np.concatenate(sensor_rankings, axis=0)[:len(score_df)]
-            for rank_idx in range(self.input_c):
-                score_df[f"Top{rank_idx + 1}_Sensor"] = [
-                    feature_names[row[rank_idx]] if label == 1 else ""
-                    for row, label in zip(all_rankings, gt)
-                ]
-
         prefix = self.run_name()
-        csv_save_path = os.path.join(self.model_save_path, f'{prefix}_scores.csv')
-        report_save_path = os.path.join(self.model_save_path, f"Report_{prefix}.txt")
+        artifact_path = os.path.join(self.output_dir, f'{prefix}_scores.npy')
+        report_save_path = os.path.join(self.output_dir, f"Report_{prefix}.txt")
+        timestamps = self.score_timestamps(len(test_energy))
+        if timestamps is None:
+            timestamps = np.arange(len(test_energy))
+        all_rankings = np.concatenate(sensor_rankings, axis=0)[:len(test_energy)]
 
-        score_df.to_csv(csv_save_path, index=False)
-        print(f"Anomaly scores saved to: {csv_save_path}")
+        save_score_artifact(
+            artifact_path,
+            dataset=self.dataset,
+            anomaly_score=test_energy,
+            ground_truth=gt,
+            timestamps=timestamps,
+            feature_names=feature_names,
+            sensor_rankings=all_rankings,
+            ranking_mode=ranking_mode,
+            train_score_mean=(
+                None if z_score_mean is None else z_score_mean.detach().cpu().numpy()
+            ),
+            train_score_std=(
+                None if z_score_std is None else z_score_std.detach().cpu().numpy()
+            ),
+            metadata={
+                "win_size": self.win_size,
+                "patch_len": self.patch_len,
+                "batch_size": self.batch_size,
+                "epoch": self.num_epochs,
+                "input_c": self.input_c,
+                "output_c": self.output_c,
+            },
+        )
+        print(f"Scores and RCA rankings saved to: {artifact_path}")
 
         self.write_efficiency_report(report_save_path, prefix, profiling_metrics)
         print(f"Profiling report saved to: {report_save_path}")
 
-        return csv_save_path
+        return artifact_path
 

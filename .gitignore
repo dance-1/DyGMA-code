@@ -22,7 +22,12 @@ Thumbs.db
 
 # DyGMA data and runtime artifacts
 dataset/
-checkpoints/
+outputs/
+checkpoints/*
+!checkpoints/pretrained/
+checkpoints/pretrained/*
+!checkpoints/pretrained/*.pth
 *.pth
+!checkpoints/pretrained/*.pth
 *.pt
 *.ckpt
