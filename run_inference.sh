@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # Unified pretrained inference entry. Every test exports sensor rankings;
-# SWaT and WADI use train-distribution per-sensor Z-score rankings for RCA.
+# SWaT and WADI use train-distribution standardized sensor rankings for RCA.
 
 cd "$(dirname "$0")"
 
@@ -83,9 +83,9 @@ run_dataset() {
   echo "Dataset: ${dataset}"
   echo "Data: ${data_path}"
   echo "Checkpoint: ${checkpoint}"
-  echo "Detection: no-Z raw MeanTopK-10%"
+  echo "Detection: raw MeanTopK-10%"
   if [[ "${dataset}" == "SWaT" || "${dataset}" == "WADI" ]]; then
-    echo "RCA ranking: train-distribution per-sensor Z-score"
+    echo "RCA ranking: train-distribution standardized per-sensor score"
   else
     echo "RCA ranking: raw per-sensor score"
   fi

@@ -7,16 +7,16 @@ cause analysis (RCA) for SWaT and WADI.
 
 ## Unified protocol
 
-- Detection: raw no-Z MeanTopK-10% anomaly score for all six datasets.
+- Detection: raw MeanTopK-10% anomaly score for all six datasets.
 - RCA export: always enabled in test mode; there is no optional RCA flag.
 - SWaT/WADI RCA: per-sensor scores are standardized with mean and standard
-  deviation estimated from the training split, then ranked in Z-score space.
+  deviation estimated from the training split before ranking.
 - Other datasets: sensor rankings use raw per-sensor scores.
 - Output: one versioned `*_scores.npy` artifact per dataset; inference does not
   export CSV files.
 
-Z standardization changes only the sensor ranking used for SWaT/WADI RCA. It
-does not change the anomaly score used by PA, Affiliation, ROC-AUC, or VUS-ROC.
+Sensor standardization changes only the ranking used for SWaT/WADI RCA. It does
+not change the anomaly score used by PA, Affiliation, ROC-AUC, or VUS-ROC.
 
 ## Repository structure
 
@@ -26,8 +26,8 @@ does not change the anomaly score used by PA, Affiliation, ROC-AUC, or VUS-ROC.
 +-- solver.py                  # Training, raw detection, and mandatory RCA export
 +-- artifact_io.py             # Versioned NPY artifact reader/writer
 +-- evaluate.py                # Detection evaluation
-+-- evaluate_RCA_SWAT.py       # SWaT Z-RCA evaluation
-+-- evaluate_RCA_WADI.py       # WADI Z-RCA evaluation
++-- evaluate_RCA_SWAT.py       # SWaT RCA evaluation
++-- evaluate_RCA_WADI.py       # WADI RCA evaluation
 +-- run_inference.sh           # Reproduce inference and RCA
 +-- run_train_inference.sh     # Retrain, infer, and run RCA
 +-- checkpoints/pretrained/    # Six canonical epoch-15 checkpoints
@@ -118,7 +118,7 @@ CUDA_VISIBLE_DEVICES=0 bash run_inference.sh SWaT WADI
 ```
 
 The script performs inference and detection evaluation for every requested
-dataset. For SWaT and WADI it also runs the event-level Z-RCA evaluator.
+dataset. For SWaT and WADI it also runs the event-level RCA evaluator.
 
 ## Output files
 
@@ -140,13 +140,13 @@ Each score artifact is a NumPy dictionary with these fields:
 - `format_version`
 - `dataset`
 - `score_protocol`
-- `ranking_mode` (`z` for SWaT/WADI)
+- `ranking_mode` (`standardized` for SWaT/WADI)
 - `rca_protocol`
 - `time` and `timestamp`
 - `anomaly_score` and `ground_truth`
 - `feature_names`
 - `sensor_rankings` as integer feature indices
-- `train_score_mean` and `train_score_std` for Z-RCA
+- `train_score_mean` and `train_score_std` for standardized RCA rankings
 - `metadata` with window, patch, batch, epoch, and dimensions
 
 Load an artifact with:
@@ -203,8 +203,8 @@ Test mode always exports sensor rankings; no export switch is exposed.
 - The provided script fixes epoch, window, patch, and batch settings to match
   the included checkpoints.
 - Checkpoint hashes are verified before inference.
-- SWaT and WADI RCA evaluators reject artifacts whose `ranking_mode` is not
-  `z`, preventing accidental raw/Z mixing.
+- SWaT and WADI RCA evaluators require standardized ranking artifacts,
+  preventing accidental ranking-protocol mixing.
 - Generated datasets, outputs, logs, and custom checkpoints are excluded by
   `.gitignore`; the six pretrained checkpoints are explicitly included.
 

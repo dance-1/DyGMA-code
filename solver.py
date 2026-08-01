@@ -121,7 +121,7 @@ class Solver(object):
         return timestamps[:length]
 
     def rca_train_score_statistics(self, criterion):
-        """Estimate train-distribution statistics for per-sensor Z ranking."""
+        """Estimate train-distribution statistics for standardized ranking."""
         score_sum = torch.zeros(self.input_c, device=self.device)
         score_sq_sum = torch.zeros(self.input_c, device=self.device)
         score_count = 0
@@ -137,7 +137,7 @@ class Solver(object):
                 score_count += sensor_scores.shape[0] * sensor_scores.shape[1]
 
         if score_count == 0:
-            raise ValueError("Cannot compute RCA Z statistics from an empty train loader.")
+            raise ValueError("Cannot compute RCA statistics from an empty train loader.")
 
         score_mean = score_sum / score_count
         score_var = torch.clamp(score_sq_sum / score_count - score_mean ** 2, min=0.0)
@@ -340,14 +340,14 @@ class Solver(object):
         print("======================TEST MODE======================")
 
         criterion = nn.MSELoss(reduction='none')
-        ranking_mode = "z" if self.dataset in {"SWaT", "WADI"} else "raw"
+        ranking_mode = "standardized" if self.dataset in {"SWaT", "WADI"} else "raw"
         feature_names = self.feature_names()
 
-        z_score_mean = None
-        z_score_std = None
-        if ranking_mode == "z":
-            print("[RCA] Computing train-distribution Z statistics...")
-            z_score_mean, z_score_std = self.rca_train_score_statistics(criterion)
+        calibration_mean = None
+        calibration_std = None
+        if ranking_mode == "standardized":
+            print("[RCA] Computing train-distribution statistics...")
+            calibration_mean, calibration_std = self.rca_train_score_statistics(criterion)
         print(f"[RCA] Exporting {ranking_mode.upper()} per-sensor rankings...")
 
         with torch.no_grad():
@@ -360,8 +360,10 @@ class Solver(object):
                     input_data, criterion, return_sensor_scores=True
                 )
                 ranking_scores = sensor_scores
-                if ranking_mode == "z":
-                    ranking_scores = (sensor_scores - z_score_mean) / (z_score_std + 1e-5)
+                if ranking_mode == "standardized":
+                    ranking_scores = (
+                        sensor_scores - calibration_mean
+                    ) / (calibration_std + 1e-5)
                 _, top_indices = torch.topk(
                     ranking_scores, k=self.input_c, dim=-1
                 )
@@ -396,10 +398,14 @@ class Solver(object):
             sensor_rankings=all_rankings,
             ranking_mode=ranking_mode,
             train_score_mean=(
-                None if z_score_mean is None else z_score_mean.detach().cpu().numpy()
+                None
+                if calibration_mean is None
+                else calibration_mean.detach().cpu().numpy()
             ),
             train_score_std=(
-                None if z_score_std is None else z_score_std.detach().cpu().numpy()
+                None
+                if calibration_std is None
+                else calibration_std.detach().cpu().numpy()
             ),
             metadata={
                 "win_size": self.win_size,

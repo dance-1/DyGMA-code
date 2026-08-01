@@ -319,9 +319,9 @@ def standardizer(X, X_t=None, keep_scalar=False):
     Returns
     -------
     X_norm : numpy array of shape (n_samples, n_features)
-        X after the Z-score normalization
+        X after feature standardization
     X_t_norm : numpy array of shape (n_samples, n_features)
-        X_t after the Z-score normalization
+        X_t after feature standardization
     scalar : sklearn scalar object
         The scalar used in conversion
     """

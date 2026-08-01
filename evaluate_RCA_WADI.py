@@ -87,7 +87,7 @@ def aggregate_event_ranking(ranking_rows, feature_names):
 
 def load_rca_artifact(rca_source):
     artifact = load_score_artifact(
-        rca_source, expected_dataset="WADI", require_ranking_mode="z"
+        rca_source, expected_dataset="WADI", require_ranking_mode="standardized"
     )
     timestamps = pd.Series(np.asarray(artifact["timestamp"]).astype(str)).str.strip()
     time_objects = pd.to_datetime(timestamps, errors="coerce")
@@ -511,7 +511,7 @@ def main():
     parser.add_argument(
         "--scores_file",
         default=os.path.join("outputs", "WADI_win100_in123_out123_batch32_patch1_ep15_scores.npy"),
-        help="Unified WADI NPY artifact; ranking_mode must be z.",
+        help="Unified WADI NPY artifact with standardized sensor rankings.",
     )
     parser.add_argument("--output_dir", default="checkpoints")
     parser.add_argument("--focus_window", type=int, default=180)

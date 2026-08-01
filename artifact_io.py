@@ -4,7 +4,7 @@ import numpy as np
 
 
 FORMAT_VERSION = 1
-VALID_RANKING_MODES = {"raw", "z"}
+VALID_RANKING_MODES = {"raw", "standardized"}
 
 
 def save_score_artifact(
@@ -47,11 +47,11 @@ def save_score_artifact(
     payload = {
         "format_version": FORMAT_VERSION,
         "dataset": str(dataset),
-        "score_protocol": "no-Z raw MeanTopK-10%",
+        "score_protocol": "raw MeanTopK-10%",
         "ranking_mode": ranking_mode,
         "rca_protocol": (
-            "train-distribution per-sensor Z-score"
-            if ranking_mode == "z"
+            "train-distribution standardized per-sensor score"
+            if ranking_mode == "standardized"
             else "raw per-sensor score"
         ),
         "time": np.arange(length, dtype=np.int64),
@@ -128,4 +128,3 @@ def load_score_artifact(path, expected_dataset=None, require_ranking_mode=None):
         if np.asarray(payload[key]).reshape(-1).shape[0] != length:
             raise ValueError(f"Artifact field '{key}' has an inconsistent length.")
     return payload
-

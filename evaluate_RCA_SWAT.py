@@ -108,7 +108,7 @@ def load_attack_table():
 
 def load_rca_artifact(rca_source):
     artifact = load_score_artifact(
-        rca_source, expected_dataset="SWaT", require_ranking_mode="z"
+        rca_source, expected_dataset="SWaT", require_ranking_mode="standardized"
     )
     timestamps = pd.Series(np.asarray(artifact["timestamp"]).astype(str)).str.strip()
     time_objects = pd.to_datetime(timestamps, dayfirst=True, errors="coerce")
@@ -544,7 +544,7 @@ def main():
     parser.add_argument(
         "--scores_file",
         default=os.path.join("outputs", "SWaT_win100_in51_out51_batch32_patch1_ep15_scores.npy"),
-        help="Unified SWaT NPY artifact; ranking_mode must be z.",
+        help="Unified SWaT NPY artifact with standardized sensor rankings.",
     )
     parser.add_argument("--output_dir", default="checkpoints")
     parser.add_argument("--focus_window", type=int, default=180)
