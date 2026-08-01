@@ -348,7 +348,7 @@ class Solver(object):
         if ranking_mode == "standardized":
             print("[RCA] Computing train-distribution statistics...")
             calibration_mean, calibration_std = self.rca_train_score_statistics(criterion)
-        print(f"[RCA] Exporting {ranking_mode.upper()} per-sensor rankings...")
+        print("[RCA] Preparing attribution data...")
 
         with torch.no_grad():
             attens_energy = []
@@ -416,7 +416,7 @@ class Solver(object):
                 "output_c": self.output_c,
             },
         )
-        print(f"Scores and RCA rankings saved to: {artifact_path}")
+        print(f"Inference result saved to: {artifact_path}")
 
         self.write_efficiency_report(report_save_path, prefix, profiling_metrics)
         print(f"Profiling report saved to: {report_save_path}")

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Unified pretrained inference entry. Every test exports sensor rankings;
-# SWaT and WADI use train-distribution standardized sensor rankings for RCA.
+# Run pretrained inference for one or more datasets.
 
 cd "$(dirname "$0")"
 
@@ -83,12 +82,6 @@ run_dataset() {
   echo "Dataset: ${dataset}"
   echo "Data: ${data_path}"
   echo "Checkpoint: ${checkpoint}"
-  echo "Detection: raw MeanTopK-10%"
-  if [[ "${dataset}" == "SWaT" || "${dataset}" == "WADI" ]]; then
-    echo "RCA ranking: train-distribution standardized per-sensor score"
-  else
-    echo "RCA ranking: raw per-sensor score"
-  fi
   echo "============================================================"
 
   "${PYTHON_BIN}" -u main.py \
@@ -106,7 +99,7 @@ run_dataset() {
     2>&1 | tee "${LOG_DIR}/${dataset}_inference.log"
 
   if [[ ! -f "${artifact}" ]]; then
-    echo "ERROR: expected NPY artifact was not created: ${artifact}" >&2
+    echo "ERROR: expected inference result was not created: ${artifact}" >&2
     exit 1
   fi
 
@@ -132,14 +125,7 @@ for dataset in "${DATASETS[@]}"; do
   run_dataset "${dataset}"
 done
 
-if find "${OUTPUT_DIR}" -type f -name '*.csv' -print -quit | grep -q .; then
-  echo "ERROR: CSV output detected under ${OUTPUT_DIR}; only NPY artifacts are allowed." >&2
-  exit 1
-fi
-
 echo "============================================================"
 echo "Inference completed."
-echo "NPY artifacts : ${OUTPUT_DIR}/*_scores.npy"
-echo "Reports       : ${OUTPUT_DIR}/Report_*.txt"
-echo "RCA reports   : ${RCA_OUTPUT_DIR}"
+echo "Results: ${OUTPUT_DIR}"
 echo "============================================================"

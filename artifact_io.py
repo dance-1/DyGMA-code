@@ -21,7 +21,7 @@ def save_score_artifact(
     train_score_std=None,
     metadata=None,
 ):
-    """Save detection scores and RCA rankings as one versioned NPY artifact."""
+    """Save model outputs as one versioned result file."""
     if ranking_mode not in VALID_RANKING_MODES:
         raise ValueError(f"Unsupported ranking mode: {ranking_mode}")
 
@@ -37,12 +37,12 @@ def save_score_artifact(
         raise ValueError("Score, label, and timestamp lengths must match.")
     if sensor_rankings.shape != expected_shape:
         raise ValueError(
-            f"Sensor ranking shape mismatch: {sensor_rankings.shape} != {expected_shape}"
+            f"Feature-order shape mismatch: {sensor_rankings.shape} != {expected_shape}"
         )
     if sensor_rankings.size and (
         sensor_rankings.min() < 0 or sensor_rankings.max() >= feature_names.shape[0]
     ):
-        raise ValueError("Sensor rankings contain an out-of-range feature index.")
+        raise ValueError("Feature order contains an out-of-range index.")
 
     payload = {
         "format_version": FORMAT_VERSION,
@@ -122,7 +122,7 @@ def load_score_artifact(path, expected_dataset=None, require_ranking_mode=None):
     rankings = np.asarray(payload["sensor_rankings"])
     if rankings.shape != (length, feature_count):
         raise ValueError(
-            f"Invalid sensor ranking shape: {rankings.shape} != {(length, feature_count)}"
+            f"Invalid feature-order shape: {rankings.shape} != {(length, feature_count)}"
         )
     for key in ("time", "timestamp", "ground_truth"):
         if np.asarray(payload[key]).reshape(-1).shape[0] != length:

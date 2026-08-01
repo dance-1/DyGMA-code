@@ -1,45 +1,11 @@
 # DyGMA
 
 DyGMA is a multivariate time-series anomaly detection framework for industrial
-and spacecraft telemetry. This release provides one reproducible inference
-path with pretrained checkpoints, NPY score artifacts, and event-level root
-cause analysis (RCA) for SWaT and WADI.
-
-## Unified protocol
-
-- Detection: raw MeanTopK-10% anomaly score for all six datasets.
-- RCA export: always enabled in test mode; there is no optional RCA flag.
-- SWaT/WADI RCA: per-sensor scores are standardized with mean and standard
-  deviation estimated from the training split before ranking.
-- Other datasets: sensor rankings use raw per-sensor scores.
-- Output: one versioned `*_scores.npy` artifact per dataset; inference does not
-  export CSV files.
-
-Sensor standardization changes only the ranking used for SWaT/WADI RCA. It does
-not change the anomaly score used by PA, Affiliation, ROC-AUC, or VUS-ROC.
-
-## Repository structure
-
-```text
-.
-+-- main.py                    # Training and unified test entry point
-+-- solver.py                  # Training, raw detection, and mandatory RCA export
-+-- artifact_io.py             # Versioned NPY artifact reader/writer
-+-- evaluate.py                # Detection evaluation
-+-- evaluate_RCA_SWAT.py       # SWaT RCA evaluation
-+-- evaluate_RCA_WADI.py       # WADI RCA evaluation
-+-- run_inference.sh           # Reproduce inference and RCA
-+-- run_train_inference.sh     # Retrain, infer, and run RCA
-+-- checkpoints/pretrained/    # Six canonical epoch-15 checkpoints
-+-- data_factory/              # Dataset loaders
-+-- model/                     # DyGMA model
-+-- utils/                     # Utility functions
-+-- vus/                       # VUS and Affiliation metrics
-```
+and spacecraft telemetry.
 
 ## Environment
 
-Linux or WSL2 with CUDA-enabled PyTorch is recommended.
+Linux or WSL2 with a CUDA-enabled PyTorch installation is recommended.
 
 ```bash
 conda create -n dygma python=3.10
@@ -50,168 +16,76 @@ pip install -r requirements.txt
 Install the PyTorch build appropriate for the local CUDA version when GPU
 acceleration is required.
 
-## Data preparation
+## Data
 
-By default, both runners read datasets from `dataset/` in the repository root:
+Place the six processed datasets under the repository's `dataset/` directory:
 
 ```text
 dataset/
 +-- MSL/
-|   +-- MSL_train.npy
-|   +-- MSL_test.npy
-|   +-- MSL_test_label.npy
 +-- SMD/
-|   +-- SMD_train.npy
-|   +-- SMD_test.npy
-|   +-- SMD_test_label.npy
 +-- PSM/
-|   +-- train.csv
-|   +-- test.csv
-|   +-- test_label.csv
 +-- SWaT/
-|   +-- train.csv
-|   +-- test.csv
-|   +-- test_label.csv
-+-- HAI/
-|   +-- train.csv
-|   +-- test.csv
-|   +-- test_label.csv
 +-- WADI/
-    +-- train.csv
-    +-- test.csv
-    +-- test_label.csv
++-- HAI/
 ```
 
-For CSV datasets, the first column is the timestamp and the remaining columns
-are sensor values. Labels are binary (`1` for anomaly, `0` for normal).
-
-To use another dataset root without changing source code, set `DATA_ROOT`:
+The expected files for each dataset are defined in
+`data_factory/data_loader.py`. To use a different data directory, set
+`DATA_ROOT` when running a script:
 
 ```bash
-DATA_ROOT=/path/to/dataset bash run_inference.sh SWaT WADI
+DATA_ROOT=/path/to/dataset bash run_inference.sh
 ```
 
-## Pretrained weights
+## Pretrained Inference
 
-Six canonical epoch-15 checkpoints are included under
-`checkpoints/pretrained/`. The inference script contains and verifies the
-SHA256 digest of every checkpoint before loading a model.
+Pretrained checkpoints for all six datasets are included in
+`checkpoints/pretrained/`.
 
-## Reproduce inference and RCA
-
-Run all six datasets:
+Run all datasets:
 
 ```bash
 bash run_inference.sh
 ```
 
-Run only SWaT and WADI:
+Run selected datasets:
 
 ```bash
 bash run_inference.sh SWaT WADI
 ```
 
-Select a GPU before the command when needed:
+Select a GPU:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 bash run_inference.sh SWaT WADI
+CUDA_VISIBLE_DEVICES=0 bash run_inference.sh
 ```
 
-The script performs inference and detection evaluation for every requested
-dataset. For SWaT and WADI it also runs the event-level RCA evaluator.
+Results are written to `outputs/`.
 
-## Output files
+## Training And Inference
 
-```text
-outputs/
-+-- {RUN_NAME}_scores.npy
-+-- Report_{RUN_NAME}.txt
-+-- logs/
-|   +-- {DATASET}_inference.log
-|   +-- SWaT_rca.log
-|   +-- WADI_rca.log
-+-- rca/
-    +-- SWaT_RCA_Report.txt
-    +-- WADI_RCA_Report.txt
-```
-
-Each score artifact is a NumPy dictionary with these fields:
-
-- `format_version`
-- `dataset`
-- `score_protocol`
-- `ranking_mode` (`standardized` for SWaT/WADI)
-- `rca_protocol`
-- `time` and `timestamp`
-- `anomaly_score` and `ground_truth`
-- `feature_names`
-- `sensor_rankings` as integer feature indices
-- `train_score_mean` and `train_score_std` for standardized RCA rankings
-- `metadata` with window, patch, batch, epoch, and dimensions
-
-Load an artifact with:
-
-```python
-import numpy as np
-
-artifact = np.load("outputs/SWaT_win100_in51_out51_batch32_patch1_ep15_scores.npy",
-                   allow_pickle=True).item()
-print(artifact["score_protocol"])
-print(artifact["ranking_mode"])
-print(artifact["sensor_rankings"].shape)
-```
-
-The artifact loader in `artifact_io.py` performs stronger schema, dataset, and
-ranking-mode validation and is used by all included evaluators.
-
-## Optional training
-
-Training remains available through `main.py --mode train`. Use a separate
-checkpoint directory so the provided weights remain unchanged:
-
-```bash
-python main.py \
-  --mode train \
-  --dataset MSL \
-  --data_path dataset/MSL \
-  --input_c 55 \
-  --output_c 55 \
-  --win_size 100 \
-  --patch_len 1 \
-  --batch_size 32 \
-  --num_epochs 15 \
-  --checkpoint_dir checkpoints/custom \
-  --output_dir outputs/custom
-```
-
-To retrain and then infer all six datasets in one complete run while keeping
-the canonical weights untouched:
+Train and evaluate all six datasets:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 bash run_train_inference.sh
 ```
 
-The end-to-end runner uses 15 epochs by default and writes to
-`checkpoints/retrained/` and `outputs/retrained/`. Override settings through
-environment variables, for example `EPOCHS=1` for a one-epoch smoke test.
+Train and evaluate selected datasets:
 
-Test mode always exports sensor rankings; no export switch is exposed.
+```bash
+CUDA_VISIBLE_DEVICES=0 bash run_train_inference.sh SWaT WADI
+```
 
-## Reproducibility notes
+The default training length is 15 epochs. Override it with `EPOCHS`:
 
-- Random seeds are fixed in `main.py`.
-- The provided script fixes epoch, window, patch, and batch settings to match
-  the included checkpoints.
-- Checkpoint hashes are verified before inference.
-- SWaT and WADI RCA evaluators require standardized ranking artifacts,
-  preventing accidental ranking-protocol mixing.
-- Generated datasets, outputs, logs, and custom checkpoints are excluded by
-  `.gitignore`; the six pretrained checkpoints are explicitly included.
+```bash
+CUDA_VISIBLE_DEVICES=0 EPOCHS=1 bash run_train_inference.sh
+```
+
+New checkpoints are written to `checkpoints/retrained/`, and results are
+written to `outputs/retrained/`.
 
 ## License
 
 This project is released under the MIT License.
-
-## Citation
-
-Citation information will be updated after the paper is released.

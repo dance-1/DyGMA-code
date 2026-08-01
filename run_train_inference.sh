@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# End-to-end retraining and inference. Newly trained checkpoints and outputs
-# are isolated from the canonical pretrained release artifacts.
+# Train and evaluate one or more datasets.
 
 cd "$(dirname "$0")"
 
@@ -95,7 +94,7 @@ run_dataset() {
     2>&1 | tee "${LOG_DIR}/${dataset}_inference.log"
 
   if [[ ! -f "${artifact}" ]]; then
-    echo "ERROR: expected NPY artifact was not created: ${artifact}" >&2
+    echo "ERROR: expected inference result was not created: ${artifact}" >&2
     exit 1
   fi
 
@@ -121,15 +120,8 @@ for dataset in "${DATASETS[@]}"; do
   run_dataset "${dataset}"
 done
 
-if find "${OUTPUT_DIR}" -type f -name '*.csv' -print -quit | grep -q .; then
-  echo "ERROR: CSV output detected under ${OUTPUT_DIR}; only NPY artifacts are allowed." >&2
-  exit 1
-fi
-
 echo "============================================================"
 echo "Training and inference completed."
-echo "Checkpoints : ${CHECKPOINT_DIR}"
-echo "NPY outputs : ${OUTPUT_DIR}/*_scores.npy"
-echo "Reports     : ${OUTPUT_DIR}/Report_*.txt"
-echo "RCA reports : ${RCA_OUTPUT_DIR}"
+echo "Checkpoints: ${CHECKPOINT_DIR}"
+echo "Results: ${OUTPUT_DIR}"
 echo "============================================================"

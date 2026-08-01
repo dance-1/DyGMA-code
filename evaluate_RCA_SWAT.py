@@ -505,7 +505,7 @@ def write_combined_analysis(dataset, output_dir, event_metrics=None, pilot_summa
     report_lines.extend([
         "",
         "3. Table B. Sensor-level root-cause candidate ranking",
-        "MRR / HR@100% / HR@150% are computed from Z-ranked sensor indices in the NPY artifact.",
+        "MRR / HR@100% / HR@150% are computed from the exported attribution data.",
         "------------------------------------------------------------",
     ])
 
@@ -544,7 +544,7 @@ def main():
     parser.add_argument(
         "--scores_file",
         default=os.path.join("outputs", "SWaT_win100_in51_out51_batch32_patch1_ep15_scores.npy"),
-        help="Unified SWaT NPY artifact with standardized sensor rankings.",
+        help="SWaT inference result file.",
     )
     parser.add_argument("--output_dir", default="checkpoints")
     parser.add_argument("--focus_window", type=int, default=180)
